@@ -1,7 +1,7 @@
 import serial
 import time
 
-PORT = '/dev/cu.usbmodem1401'  # Ajusta al puerto correcto
+PORT = '/dev/cu.usbmodem11401'  # Ajusta al puerto correcto
 BAUD_RATE = 9600
 
 try:
