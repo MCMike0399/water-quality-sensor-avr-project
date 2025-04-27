@@ -149,52 +149,45 @@ async def broadcast_data(data):
             if connection in websocket_connections:
                 websocket_connections.remove(connection)
 
-def serial_reader():
-    global loop
-    
-    # Crear un nuevo loop de eventos para este hilo
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
+def serial_reader(main_loop):  
     try:
         ser = serial.Serial(PORT, BAUD_RATE, timeout=1)
         print(f"Conectado a {PORT} a {BAUD_RATE} baudios")
         
         while True:
-            try:
-                if ser.in_waiting > 0:
-                    line = ser.readline().decode('utf-8').strip()
-                    if line:
-                        try:
-                            data = {}
-                            parts = line.split(';')
-                            for part in parts:
-                                if ':' in part:
-                                    key, value = part.split(':')
-                                    data[key] = value.strip()
-                            
-                            print(f"Datos recibidos: {data}")
-                            
-                            # Ejecutar broadcast en el loop de eventos de este hilo
-                            asyncio.run_coroutine_threadsafe(broadcast_data(data), loop)
-                        except Exception as e:
-                            print(f"Error al procesar datos: {e}")
-                
-                time.sleep(0.1)
-            except Exception as e:
-                print(f"Error en la lectura serial: {e}")
-                time.sleep(1)  # Esperar antes de reintentar
+            if ser.in_waiting > 0:
+                line = ser.readline().decode('utf-8').strip()
+                if line:
+                    try:
+                        data = dict(item.split(":") for item in line.split(";") if ":" in item)
+                        data = {k: float(v) for k, v in data.items()}
+                        
+                        # Usar el loop principal para enviar datos
+                        asyncio.run_coroutine_threadsafe(
+                            broadcast_data(data), 
+                            main_loop
+                        )
+                        
+                        print(f"Datos procesados: {data}")
+                    except Exception as e:
+                        print(f"Error procesando datos: {e}")
+            
+            time.sleep(0.1)
     except Exception as e:
-        print(f"Error al abrir el puerto serial {PORT}: {e}")
+        print(f"Error en conexión serial: {e}")
     finally:
         if 'ser' in locals() and ser.is_open:
             ser.close()
-            print("Puerto serial cerrado")
 
 @app.on_event("startup")
 async def startup_event():
-    # Iniciar el hilo de lectura serial cuando inicie la aplicación
-    threading.Thread(target=serial_reader, daemon=True).start()
+    # Obtener el loop principal y pasarlo al hilo serial
+    main_loop = asyncio.get_running_loop()
+    threading.Thread(
+        target=serial_reader, 
+        args=(main_loop,),  # Pasar el loop como argumento
+        daemon=True
+    ).start()
 
 if __name__ == "__main__":
     import uvicorn
