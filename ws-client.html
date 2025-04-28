@@ -178,7 +178,7 @@
                 conductivity: []
             };
 
-            // Umbrales para alertas y estados
+            // Umbrales actualizados para alertas y estados basados en valores reales de sensores
             const THRESHOLDS = {
                 PH: {
                     ideal: { min: 6.5, max: 7.5 },
@@ -188,18 +188,18 @@
                     danger: { min: 2, max: 12 }
                 },
                 T: {
-                    ideal: { max: 5 },
-                    good: { max: 10 },
-                    acceptable: { max: 20 },
-                    warning: { max: 80 },
-                    danger: { max: 90 }
+                    ideal: { max: 10 },
+                    good: { max: 50 },
+                    acceptable: { max: 100 },
+                    warning: { max: 500 },
+                    danger: { max: 800 }
                 },
                 C: {
-                    ideal: { max: 500 },
-                    good: { max: 1000 },
-                    acceptable: { max: 1500 },
-                    warning: { max: 2000 },
-                    danger: { max: 3000 }
+                    ideal: { max: 300 },
+                    good: { max: 600 },
+                    acceptable: { max: 900 },
+                    warning: { max: 1200 },
+                    danger: { max: 1400 }
                 }
             };
 
@@ -227,7 +227,7 @@
                         title: 'Turbidez (NTU)',
                         titlefont: {color: '#3498db'},
                         tickfont: {color: '#3498db'},
-                        range: [0, 100] // Rango máximo para turbidez
+                        range: [0, 1000] // Rango actualizado para turbidez (0-1000 NTU)
                     }
                 };
 
@@ -284,7 +284,7 @@
                         title: 'Conductividad (μS/cm)',
                         titlefont: {color: '#2ecc71'},
                         tickfont: {color: '#2ecc71'},
-                        range: [0, 10000] // Rango máximo para conductividad
+                        range: [0, 1500] // Rango actualizado para conductividad (0-1500 μS/cm)
                     }
                 };
 
@@ -296,16 +296,11 @@
                 const now = new Date();
                 const timeStr = now.toLocaleTimeString();
                 
-                // Convertir valores para gráficos
-                const turbidity = (data.T / 1023) * 100;
-                const ph = (data.PH / 1023) * 14;
-                const conductivity = data.C * 10;
-                
                 // Añadir nuevo punto de datos
                 chartData.time.push(timeStr);
-                chartData.turbidity.push(turbidity);
-                chartData.ph.push(ph);
-                chartData.conductivity.push(conductivity);
+                chartData.turbidity.push(data.T);
+                chartData.ph.push(data.PH);
+                chartData.conductivity.push(data.C);
                 
                 // Limitar el número de puntos
                 if (chartData.time.length > MAX_DATA_POINTS) {
@@ -332,23 +327,12 @@
                 }, {}, [0]);
             }
 
-            // Interpretar valores (convertir valores crudos ADC)
-            function interpretValues(data) {
-                // Convertir ADC a valores reales
-                const rawTurbidity = data.T;
-                const rawPh = data.PH;
-                const rawConductivity = data.C;
-                
-                // Aplicar fórmulas de conversión
-                const turbidity = (rawTurbidity / 1023) * 100;
-                const ph = (rawPh / 1023) * 14;
-                const conductivity = rawConductivity * 10;
-                
+            // Formatear valores para mostrar (sin conversión)
+            function formatValues(data) {
                 return {
-                    T: turbidity.toFixed(2),
-                    PH: ph.toFixed(2),
-                    C: conductivity.toFixed(0),
-                    raw: { T: rawTurbidity, PH: rawPh, C: rawConductivity }
+                    T: parseFloat(data.T).toFixed(2),
+                    PH: parseFloat(data.PH).toFixed(2),
+                    C: parseFloat(data.C).toFixed(0)
                 };
             }
 
@@ -525,15 +509,16 @@
 
             // Actualizar interfaz con nuevos valores
             function updateInterface(data) {
-                const interpretedData = interpretValues(data);
+                // Solo formatear los valores para mostrar (no necesita conversión)
+                const formattedData = formatValues(data);
                 
                 // Actualizar indicadores
-                document.getElementById('turbidity').textContent = interpretedData.T;
-                document.getElementById('ph').textContent = interpretedData.PH;
-                document.getElementById('conductivity').textContent = interpretedData.C;
+                document.getElementById('turbidity').textContent = formattedData.T;
+                document.getElementById('ph').textContent = formattedData.PH;
+                document.getElementById('conductivity').textContent = formattedData.C;
                 
                 // Comprobar valores contra umbrales
-                checkThresholds(interpretedData);
+                checkThresholds(formattedData);
                 
                 // Actualizar timestamp
                 const now = new Date();
