@@ -42,7 +42,6 @@ html = """<!DOCTYPE html>
             }
             .container {
                 max-width: 1200px;
-                max-height: 800px;
                 margin: 0 auto;
             }
             .status {
@@ -95,7 +94,7 @@ html = """<!DOCTYPE html>
                 gap: 20px;
             }
             .chart {
-                height: 400px;
+                height: 350px;
                 background-color: white;
                 border-radius: 8px;
                 box-shadow: 0 2px 5px rgba(0,0,0,0.1);
@@ -235,11 +234,16 @@ html = """<!DOCTYPE html>
                 const now = new Date();
                 const timeStr = now.toLocaleTimeString();
                 
-                // Añadir nuevo punto de datos
+                // Convertir valores para gráficos (aplicar las mismas conversiones)
+                const turbidity = (data.T / 1023) * 100;
+                const ph = (data.PH / 1023) * 14;
+                const conductivity = data.C * 10;
+                
+                // Añadir nuevo punto de datos (ya convertidos)
                 chartData.time.push(timeStr);
-                chartData.turbidity.push(data.T);
-                chartData.ph.push(data.PH);
-                chartData.conductivity.push(data.C);
+                chartData.turbidity.push(turbidity);
+                chartData.ph.push(ph);
+                chartData.conductivity.push(conductivity);
                 
                 // Limitar el número de puntos
                 if (chartData.time.length > MAX_DATA_POINTS) {
