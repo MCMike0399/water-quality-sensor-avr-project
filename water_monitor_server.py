@@ -1,0 +1,123 @@
+import serial
+import time
+import json
+import os
+from fastapi import FastAPI, WebSocket
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+import threading
+import asyncio
+
+# Configuración Serial
+PORT = '/dev/cu.usbmodem101'  # Ajusta al puerto correcto
+BAUD_RATE = 9600
+
+# Configuración FastAPI
+app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Lista para almacenar conexiones WebSocket
+websocket_connections = []
+
+# Variable para almacenar los últimos datos
+latest_data = {}
+
+@app.get("/")
+async def get():
+    # Leer directamente el archivo HTML
+    with open("ws-client.html", "r", encoding="utf-8") as file:
+        html_content = file.read()
+    return HTMLResponse(content=html_content)
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    websocket_connections.append(websocket)
+    print(f"Nueva conexión WebSocket - Total: {len(websocket_connections)}")
+    
+    # Enviar datos actuales inmediatamente si existen
+    if latest_data:
+        await websocket.send_json(latest_data)
+    
+    try:
+        while True:
+            # Mantener la conexión abierta
+            await asyncio.sleep(1)
+    except Exception as e:
+        print(f"WebSocket desconectado: {e}")
+    finally:
+        if websocket in websocket_connections:
+            websocket_connections.remove(websocket)
+        print(f"Conexión WebSocket cerrada - Quedan: {len(websocket_connections)}")
+
+async def broadcast_data(data):
+    global latest_data
+    latest_data = data
+    
+    if not websocket_connections:
+        print("No hay conexiones WebSocket activas")
+        return
+        
+    print(f"Enviando datos a {len(websocket_connections)} conexiones")
+    
+    # Crear una copia para iterar de forma segura
+    connections = websocket_connections.copy()
+    for connection in connections:
+        try:
+            await connection.send_json(data)
+        except Exception as e:
+            print(f"Error al enviar datos: {e}")
+            if connection in websocket_connections:
+                websocket_connections.remove(connection)
+
+def serial_reader(main_loop):  
+    try:
+        ser = serial.Serial(PORT, BAUD_RATE, timeout=1)
+        print(f"Conectado a {PORT} a {BAUD_RATE} baudios")
+        
+        while True:
+            if ser.in_waiting > 0:
+                line = ser.readline().decode('utf-8').strip()
+                if line:
+                    try:
+                        # Parsear datos del formato T:valor;PH:valor;C:valor
+                        data = dict(item.split(":") for item in line.split(";") if ":" in item)
+                        data = {k: float(v) for k, v in data.items()}
+                        
+                        # Usar el loop principal para enviar datos
+                        asyncio.run_coroutine_threadsafe(
+                            broadcast_data(data), 
+                            main_loop
+                        )
+                        
+                        print(f"Datos procesados: {data}")
+                    except Exception as e:
+                        print(f"Error procesando datos: {e}")
+            
+            time.sleep(0.1)
+    except Exception as e:
+        print(f"Error en conexión serial: {e}")
+    finally:
+        if 'ser' in locals() and ser.is_open:
+            ser.close()
+
+@app.on_event("startup")
+async def startup_event():
+    # Obtener el loop principal y pasarlo al hilo serial
+    main_loop = asyncio.get_running_loop()
+    threading.Thread(
+        target=serial_reader, 
+        args=(main_loop,),  # Pasar el loop como argumento
+        daemon=True
+    ).start()
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8081)

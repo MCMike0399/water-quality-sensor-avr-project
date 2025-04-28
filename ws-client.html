@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Monitor de Calidad de Agua</title>
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        <style>
+            body { 
+                font-family: Arial, sans-serif; 
+                margin: 0; 
+                padding: 20px; 
+                background-color: #f5f5f5;
+            }
+            h1 { 
+                color: #2c3e50; 
+                text-align: center;
+                margin-bottom: 30px;
+            }
+            .container {
+                max-width: 1500px;
+                margin: 0 auto;
+            }
+            .status {
+                padding: 8px 15px;
+                border-radius: 4px;
+                display: inline-block;
+                margin-bottom: 15px;
+                font-weight: bold;
+            }
+            .connected { 
+                background-color: #dff0d8; 
+                color: #3c763d; 
+            }
+            .disconnected { 
+                background-color: #f2dede; 
+                color: #a94442; 
+            }
+            .panel {
+                background-color: white;
+                border-radius: 8px;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                padding: 20px;
+                margin-bottom: 20px;
+            }
+            .readings {
+                display: grid;
+                grid-template-columns: repeat(3, 1fr);
+                gap: 20px;
+                margin-bottom: 30px;
+            }
+            .reading-card {
+                background-color: white;
+                border-radius: 8px;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                padding: 20px;
+                text-align: center;
+                position: relative;
+            }
+            .reading-value {
+                font-size: 28px;
+                font-weight: bold;
+                margin: 10px 0;
+            }
+            .reading-label {
+                color: #7f8c8d;
+                font-size: 16px;
+            }
+            .chart-container {
+                display: grid;
+                grid-template-columns: repeat(3, 1fr);
+                gap: 20px;
+            }
+            .chart {
+                height: 500px;
+                background-color: white;
+                border-radius: 8px;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                padding: 20px;
+                margin-bottom: 20px;
+            }
+            .alert {
+                background-color: #f8d7da;
+                color: #721c24;
+                padding: 15px;
+                border-radius: 8px;
+                margin-bottom: 20px;
+                display: none;
+                font-weight: bold;
+                border-left: 5px solid #f5c6cb;
+            }
+            .alert-warning {
+                background-color: #fff3cd;
+                color: #856404;
+                border-left: 5px solid #ffeeba;
+            }
+            .alert-danger {
+                background-color: #f8d7da;
+                color: #721c24;
+                border-left: 5px solid #f5c6cb;
+            }
+            .alert-success {
+                background-color: #d4edda;
+                color: #155724;
+                border-left: 5px solid #c3e6cb;
+            }
+            .alert-info {
+                background-color: #d1ecf1;
+                color: #0c5460;
+                border-left: 5px solid #bee5eb;
+            }
+            .sensor-status {
+                font-size: 14px;
+                padding: 5px 10px;
+                border-radius: 4px;
+                margin-top: 10px;
+                display: inline-block;
+            }
+            @media (max-width: 1024px) {
+                .chart-container {
+                    grid-template-columns: 1fr;
+                }
+            }
+            @media (max-width: 768px) {
+                .readings {
+                    grid-template-columns: 1fr;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Monitor de Calidad de Agua</h1>
+            <div class="panel">
+                <div id="connection" class="status disconnected">Desconectado</div>
+                <div id="lastUpdate"></div>
+            </div>
+            
+            <!-- Panel de alertas principal -->
+            <div id="alertPanel" class="alert">
+                <span id="alertMessage">Alerta: Parámetro fuera de rango</span>
+            </div>
+            
+            <div class="readings">
+                <div class="reading-card">
+                    <div class="reading-label">Turbidez</div>
+                    <div id="turbidity" class="reading-value">--</div>
+                    <div class="reading-label">NTU</div>
+                    <div id="turbidityStatus" class="sensor-status alert-info">Sin datos</div>
+                </div>
+                <div class="reading-card">
+                    <div class="reading-label">pH</div>
+                    <div id="ph" class="reading-value">--</div>
+                    <div class="reading-label">Unidades pH</div>
+                    <div id="phStatus" class="sensor-status alert-info">Sin datos</div>
+                </div>
+                <div class="reading-card">
+                    <div class="reading-label">Conductividad</div>
+                    <div id="conductivity" class="reading-value">--</div>
+                    <div class="reading-label">μS/cm</div>
+                    <div id="conductivityStatus" class="sensor-status alert-info">Sin datos</div>
+                </div>
+            </div>
+            
+            <div class="chart-container">
+                <!-- Las tres gráficas ahora están en una fila -->
+                <div class="chart" id="turbidityChart"></div>
+                <div class="chart" id="phChart"></div>
+                <div class="chart" id="conductivityChart"></div>
+            </div>
+        </div>
+
+        <script>
+            // Configuración para almacenar historial de datos
+            const MAX_DATA_POINTS = 50;
+            const chartData = {
+                time: [],
+                turbidity: [],
+                ph: [],
+                conductivity: []
+            };
+
+            // Umbrales para alertas y estados
+            const THRESHOLDS = {
+                PH: {
+                    ideal: { min: 6.5, max: 7.5 },
+                    good: { min: 6.0, max: 8.0 },
+                    acceptable: { min: 5.0, max: 9.0 },
+                    warning: { min: 3, max: 11 },
+                    danger: { min: 2, max: 12 }
+                },
+                T: {
+                    ideal: { max: 5 },
+                    good: { max: 10 },
+                    acceptable: { max: 20 },
+                    warning: { max: 80 },
+                    danger: { max: 90 }
+                },
+                C: {
+                    ideal: { max: 500 },
+                    good: { max: 1000 },
+                    acceptable: { max: 1500 },
+                    warning: { max: 2000 },
+                    danger: { max: 3000 }
+                }
+            };
+
+            // Inicializar gráficos separados
+            function initCharts() {
+                // Gráfico de Turbidez
+                const turbidityTrace = {
+                    x: chartData.time,
+                    y: chartData.turbidity,
+                    name: 'Turbidez',
+                    type: 'scatter',
+                    line: {color: '#3498db', width: 2}
+                };
+
+                const turbidityLayout = {
+                    title: 'Turbidez en Tiempo Real',
+                    margin: { l: 50, r: 20, t: 50, b: 80 },
+                    xaxis: {
+                        title: { 
+                            text: 'Tiempo',
+                        },
+                        showgrid: true
+                    },
+                    yaxis: {
+                        title: 'Turbidez (NTU)',
+                        titlefont: {color: '#3498db'},
+                        tickfont: {color: '#3498db'},
+                        range: [0, 100] // Rango máximo para turbidez
+                    }
+                };
+
+                Plotly.newPlot('turbidityChart', [turbidityTrace], turbidityLayout, {responsive: true});
+
+                // Gráfico de pH
+                const phTrace = {
+                    x: chartData.time,
+                    y: chartData.ph,
+                    name: 'pH',
+                    type: 'scatter',
+                    line: {color: '#e74c3c', width: 2}
+                };
+
+                const phLayout = {
+                    title: 'pH en Tiempo Real',
+                    margin: { l: 50, r: 20, t: 50, b: 80 },
+                    xaxis: {
+                        title: { 
+                            text: 'Tiempo',
+                        },
+                        showgrid: true
+                    },
+                    yaxis: {
+                        title: 'pH',
+                        titlefont: {color: '#e74c3c'},
+                        tickfont: {color: '#e74c3c'},
+                        range: [0, 14] // Rango exacto para pH (0-14)
+                    }
+                };
+
+                Plotly.newPlot('phChart', [phTrace], phLayout, {responsive: true});
+
+                // Gráfico de Conductividad
+                const conductivityTrace = {
+                    x: chartData.time,
+                    y: chartData.conductivity,
+                    name: 'Conductividad',
+                    type: 'scatter',
+                    line: {color: '#2ecc71', width: 2}
+                };
+
+                const conductivityLayout = {
+                    title: 'Conductividad en Tiempo Real',
+                    margin: { l: 60, r: 20, t: 50, b: 80 },
+                    xaxis: {
+                        title: { 
+                            text: 'Tiempo',
+                            standoff: 20 // Espacio adicional para el título
+                        },
+                        showgrid: true
+                    },
+                    yaxis: {
+                        title: 'Conductividad (μS/cm)',
+                        titlefont: {color: '#2ecc71'},
+                        tickfont: {color: '#2ecc71'},
+                        range: [0, 10000] // Rango máximo para conductividad
+                    }
+                };
+
+                Plotly.newPlot('conductivityChart', [conductivityTrace], conductivityLayout, {responsive: true});
+            }
+
+            // Función para actualizar gráficos con nuevos datos
+            function updateCharts(data) {
+                const now = new Date();
+                const timeStr = now.toLocaleTimeString();
+                
+                // Convertir valores para gráficos
+                const turbidity = (data.T / 1023) * 100;
+                const ph = (data.PH / 1023) * 14;
+                const conductivity = data.C * 10;
+                
+                // Añadir nuevo punto de datos
+                chartData.time.push(timeStr);
+                chartData.turbidity.push(turbidity);
+                chartData.ph.push(ph);
+                chartData.conductivity.push(conductivity);
+                
+                // Limitar el número de puntos
+                if (chartData.time.length > MAX_DATA_POINTS) {
+                    chartData.time.shift();
+                    chartData.turbidity.shift();
+                    chartData.ph.shift();
+                    chartData.conductivity.shift();
+                }
+                
+                // Actualizar cada gráfico individualmente
+                Plotly.update('turbidityChart', {
+                    x: [chartData.time],
+                    y: [chartData.turbidity]
+                }, {}, [0]);
+                
+                Plotly.update('phChart', {
+                    x: [chartData.time],
+                    y: [chartData.ph]
+                }, {}, [0]);
+                
+                Plotly.update('conductivityChart', {
+                    x: [chartData.time],
+                    y: [chartData.conductivity]
+                }, {}, [0]);
+            }
+
+            // Interpretar valores (convertir valores crudos ADC)
+            function interpretValues(data) {
+                // Convertir ADC a valores reales
+                const rawTurbidity = data.T;
+                const rawPh = data.PH;
+                const rawConductivity = data.C;
+                
+                // Aplicar fórmulas de conversión
+                const turbidity = (rawTurbidity / 1023) * 100;
+                const ph = (rawPh / 1023) * 14;
+                const conductivity = rawConductivity * 10;
+                
+                return {
+                    T: turbidity.toFixed(2),
+                    PH: ph.toFixed(2),
+                    C: conductivity.toFixed(0),
+                    raw: { T: rawTurbidity, PH: rawPh, C: rawConductivity }
+                };
+            }
+
+            // Evaluar el estado del pH y devolver mensaje y clase CSS
+            function evaluatePh(ph) {
+                const value = parseFloat(ph);
+                
+                if (value >= THRESHOLDS.PH.ideal.min && value <= THRESHOLDS.PH.ideal.max) {
+                    return {
+                        status: "Ideal para la mayoría de organismos acuáticos",
+                        class: "alert-success"
+                    };
+                } else if (value >= THRESHOLDS.PH.good.min && value <= THRESHOLDS.PH.good.max) {
+                    return {
+                        status: "Buen estado - Rango aceptable",
+                        class: "alert-success"
+                    };
+                } else if (value >= THRESHOLDS.PH.acceptable.min && value <= THRESHOLDS.PH.acceptable.max) {
+                    return {
+                        status: "Aceptable - Monitorear",
+                        class: "alert-info"
+                    };
+                } else if (value < THRESHOLDS.PH.warning.min && value >= THRESHOLDS.PH.danger.min) {
+                    return {
+                        status: "Advertencia: pH muy ácido",
+                        class: "alert-warning"
+                    };
+                } else if (value > THRESHOLDS.PH.warning.max && value <= THRESHOLDS.PH.danger.max) {
+                    return {
+                        status: "Advertencia: pH muy alcalino",
+                        class: "alert-warning"
+                    };
+                } else if (value < THRESHOLDS.PH.danger.min) {
+                    return {
+                        status: "PELIGRO: pH extremadamente ácido",
+                        class: "alert-danger"
+                    };
+                } else if (value > THRESHOLDS.PH.danger.max) {
+                    return {
+                        status: "PELIGRO: pH extremadamente alcalino",
+                        class: "alert-danger"
+                    };
+                } else {
+                    return {
+                        status: "Estado indeterminado",
+                        class: "alert-info"
+                    };
+                }
+            }
+
+            // Evaluar el estado de la turbidez
+            function evaluateTurbidity(turbidity) {
+                const value = parseFloat(turbidity);
+                
+                if (value <= THRESHOLDS.T.ideal.max) {
+                    return {
+                        status: "Excelente claridad del agua",
+                        class: "alert-success"
+                    };
+                } else if (value <= THRESHOLDS.T.good.max) {
+                    return {
+                        status: "Buena claridad - Rango aceptable",
+                        class: "alert-success"
+                    };
+                } else if (value <= THRESHOLDS.T.acceptable.max) {
+                    return {
+                        status: "Agua ligeramente turbia - Aceptable",
+                        class: "alert-info"
+                    };
+                } else if (value <= THRESHOLDS.T.warning.max) {
+                    return {
+                        status: "Advertencia: Agua turbia",
+                        class: "alert-warning"
+                    };
+                } else if (value > THRESHOLDS.T.danger.max) {
+                    return {
+                        status: "PELIGRO: Turbidez muy elevada",
+                        class: "alert-danger"
+                    };
+                } else {
+                    return {
+                        status: "Estado indeterminado",
+                        class: "alert-info"
+                    };
+                }
+            }
+
+            // Evaluar el estado de la conductividad
+            function evaluateConductivity(conductivity) {
+                const value = parseFloat(conductivity);
+                
+                if (value <= THRESHOLDS.C.ideal.max) {
+                    return {
+                        status: "Excelente - Agua muy pura",
+                        class: "alert-success"
+                    };
+                } else if (value <= THRESHOLDS.C.good.max) {
+                    return {
+                        status: "Buena calidad - Rango normal",
+                        class: "alert-success"
+                    };
+                } else if (value <= THRESHOLDS.C.acceptable.max) {
+                    return {
+                        status: "Aceptable - Monitorear",
+                        class: "alert-info"
+                    };
+                } else if (value <= THRESHOLDS.C.warning.max) {
+                    return {
+                        status: "Advertencia: Conductividad elevada",
+                        class: "alert-warning"
+                    };
+                } else if (value > THRESHOLDS.C.danger.max) {
+                    return {
+                        status: "PELIGRO: Conductividad muy alta",
+                        class: "alert-danger"
+                    };
+                } else {
+                    return {
+                        status: "Estado indeterminado",
+                        class: "alert-info"
+                    };
+                }
+            }
+
+            // Comprobar valores contra umbrales y actualizar alertas principales
+            function checkThresholds(data) {
+                const alertPanel = document.getElementById('alertPanel');
+                const alertMessage = document.getElementById('alertMessage');
+                
+                // Convertir strings a números
+                const ph = parseFloat(data.PH);
+                const turbidity = parseFloat(data.T);
+                const conductivity = parseFloat(data.C);
+                
+                // Actualizar indicadores de estado individuales
+                const phEvaluation = evaluatePh(ph);
+                const turbidityEvaluation = evaluateTurbidity(turbidity);
+                const conductivityEvaluation = evaluateConductivity(conductivity);
+                
+                // Actualizar clase y mensaje de estado para cada sensor
+                const phStatus = document.getElementById('phStatus');
+                phStatus.textContent = phEvaluation.status;
+                phStatus.className = `sensor-status ${phEvaluation.class}`;
+                
+                const turbidityStatus = document.getElementById('turbidityStatus');
+                turbidityStatus.textContent = turbidityEvaluation.status;
+                turbidityStatus.className = `sensor-status ${turbidityEvaluation.class}`;
+                
+                const conductivityStatus = document.getElementById('conductivityStatus');
+                conductivityStatus.textContent = conductivityEvaluation.status;
+                conductivityStatus.className = `sensor-status ${conductivityEvaluation.class}`;
+                
+                
+                // Si todos los valores están en rangos aceptables
+                if (ph >= THRESHOLDS.PH.acceptable.min && ph <= THRESHOLDS.PH.acceptable.max &&
+                    turbidity <= THRESHOLDS.T.acceptable.max &&
+                    conductivity <= THRESHOLDS.C.acceptable.max) {
+                    
+                    // Si alguno está en rango ideal, mostrar mensaje positivo
+                    if ((ph >= THRESHOLDS.PH.ideal.min && ph <= THRESHOLDS.PH.ideal.max) ||
+                        turbidity <= THRESHOLDS.T.ideal.max ||
+                        conductivity <= THRESHOLDS.C.ideal.max) {
+                        
+                        alertPanel.style.display = 'block';
+                        alertPanel.className = 'alert alert-success';
+                        alertMessage.textContent = 'Todos los parámetros se encuentran en rangos aceptables o ideales.';
+                        return;
+                    }
+                }
+                
+                // Si llegamos aquí, no hay alertas principales activas
+                alertPanel.style.display = 'none';
+            }
+
+            // Actualizar interfaz con nuevos valores
+            function updateInterface(data) {
+                const interpretedData = interpretValues(data);
+                
+                // Actualizar indicadores
+                document.getElementById('turbidity').textContent = interpretedData.T;
+                document.getElementById('ph').textContent = interpretedData.PH;
+                document.getElementById('conductivity').textContent = interpretedData.C;
+                
+                // Comprobar valores contra umbrales
+                checkThresholds(interpretedData);
+                
+                // Actualizar timestamp
+                const now = new Date();
+                document.getElementById('lastUpdate').textContent = 
+                    `Última actualización: ${now.toLocaleTimeString()}`;
+                
+                // Actualizar gráficos
+                updateCharts(data);
+            }
+
+            // Conectar WebSocket
+            function connectWebSocket() {
+                const statusElement = document.getElementById('connection');
+                
+                statusElement.textContent = 'Conectando...';
+                
+                const ws = new WebSocket('ws://' + window.location.host + '/ws');
+                
+                ws.onopen = function() {
+                    statusElement.textContent = 'Conectado';
+                    statusElement.className = 'status connected';
+                    console.log('WebSocket conectado');
+                };
+                
+                ws.onmessage = function(event) {
+                    const data = JSON.parse(event.data);
+                    console.log('Datos recibidos:', data);
+                    updateInterface(data);
+                };
+                
+                ws.onclose = function() {
+                    statusElement.textContent = 'Desconectado - Reconectando...';
+                    statusElement.className = 'status disconnected';
+                    // Reconectar después de 2 segundos
+                    setTimeout(connectWebSocket, 2000);
+                };
+                
+                ws.onerror = function(err) {
+                    console.error('Error en WebSocket:', err);
+                    ws.close();
+                };
+            }
+            
+            // Inicializar cuando la página cargue
+            window.addEventListener('load', function() {
+                // Inicializar gráficos
+                initCharts();
+                
+                // Conectar WebSocket
+                connectWebSocket();
+
+                // Manejar el redimensionamiento de la ventana
+                window.addEventListener('resize', function() {
+                    Plotly.Plots.resize('turbidityChart');
+                    Plotly.Plots.resize('phChart');
+                    Plotly.Plots.resize('conductivityChart');
+                });
+            });
+        </script>
+    </body>
+</html>
