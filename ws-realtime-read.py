@@ -8,7 +8,7 @@ import threading
 import asyncio
 
 # Configuración Serial
-PORT = '/dev/cu.usbmodem11401'
+PORT = '/dev/cu.usbmodem101'
 BAUD_RATE = 9600
 
 # Configuración FastAPI

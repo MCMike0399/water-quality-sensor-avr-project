@@ -2,8 +2,8 @@
 
 // Definición de pines ADC
 #define TURBIDITY_ADC 0  // A0
-#define PH_ADC        1  // A1
-#define CONDUCT_ADC   2  // A2
+#define PH_ADC        2  // A2
+#define CONDUCT_ADC   4  // A4
 
 void setup() {
   Serial.begin(9600);
@@ -23,27 +23,28 @@ void setup() {
 
 // Función para leer ADC (ASM)
 uint16_t read_adc(uint8_t channel) {
+  // Set the ADC channel in C code
+  ADMUX = (ADMUX & 0xF8) | (channel & 0x07); // Clear channel bits and set new channel
+  
   uint16_t adc_value;
+  
+  // Start conversion and read result in assembly
   asm volatile(
-    "ldi r16, 0x40      \n"  // REFS0 = 1 (AVcc)
-    "ori r16, %4        \n"  // Añadir canal al registro ADMUX
+    "ldi r16, 0xC7      \n"  // Start conversion (ADSC)
     "sts %1, r16        \n"
-    "ldi r16, 0xC7      \n"  // Iniciar conversión (ADSC)
-    "sts %2, r16        \n"
     "wait:              \n"
-    "lds r16, %2        \n"
-    "sbrc r16, 6        \n"  // Esperar hasta ADSC=0
+    "lds r16, %1        \n"
+    "sbrc r16, 6        \n"  // Wait until ADSC=0
     "rjmp wait          \n"
-    "lds %A0, %3        \n"  // Leer ADCL
-    "lds %B0, %4        \n"  // Leer ADCH
+    "lds %A0, %2        \n"  // Read ADCL
+    "lds %B0, %3        \n"  // Read ADCH
     : "=r" (adc_value)
-    : "n" (_SFR_MEM_ADDR(ADMUX)),
-      "n" (_SFR_MEM_ADDR(ADCSRA)),
+    : "n" (_SFR_MEM_ADDR(ADCSRA)),
       "n" (_SFR_MEM_ADDR(ADCL)),
-      "n" (_SFR_MEM_ADDR(ADCH)),
-      "r" (channel)  // Canal como parámetro
+      "n" (_SFR_MEM_ADDR(ADCH))
     : "r16"
   );
+  
   return adc_value;
 }
 
