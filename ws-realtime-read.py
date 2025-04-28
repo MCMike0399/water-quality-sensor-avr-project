@@ -189,10 +189,13 @@ html = """<!DOCTYPE html>
                         l: 60,
                         r: 60,
                         t: 80,
-                        b: 60
+                        b: 80
                     },
                     xaxis: {
-                        title: 'Tiempo',
+                        title: {
+                            text: 'Tiempo',
+                            standoff: 25
+                        },
                         showgrid: true,
                         zeroline: false
                     },
