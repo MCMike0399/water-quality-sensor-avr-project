@@ -86,4 +86,4 @@ El sistema mostrará alertas visuales en la interfaz web en las siguientes condi
 
 ## Personalización
 
-Puedes ajustar los umbrales de alerta modificando el objeto `THRESHOLDS` en el archivo `templates/index.html`.
+Puedes ajustar los umbrales de alerta modificando el objeto `THRESHOLDS` en el archivo `ws-client.html`.
