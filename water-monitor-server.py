@@ -6,6 +6,8 @@ from fastapi import FastAPI, WebSocket
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 import threading
 import asyncio
 
@@ -22,6 +24,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Lista para almacenar conexiones WebSocket
 websocket_connections = []
@@ -31,10 +34,7 @@ latest_data = {}
 
 @app.get("/")
 async def get():
-    # Leer directamente el archivo HTML
-    with open("ws-client.html", "r", encoding="utf-8") as file:
-        html_content = file.read()
-    return HTMLResponse(content=html_content)
+    return FileResponse("static/ws-client.html")
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
