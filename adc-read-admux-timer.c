@@ -61,18 +61,18 @@ ISR(TIMER1_COMPA_vect) {
 
 // Función para leer ADC (ASM)
 uint16_t read_adc(uint8_t channel) {
-  // Set the ADC channel in C code
+  // Configuramos canal ADC en C
   ADMUX = (ADMUX & 0xF8) | (channel & 0x07);
   
   uint16_t adc_value;
   
   // Start conversion and read result in assembly
   asm volatile(
-    "ldi r16, 0xC7      \n"  // Start conversion (ADSC)
+    "ldi r16, 0xC7      \n"  // Incia conversión (ADSC)
     "sts %1, r16        \n"
     "wait:              \n"
     "lds r16, %1        \n"
-    "sbrc r16, 6        \n"  // Wait until ADSC=0
+    "sbrc r16, 6        \n"  // Espera hasta ADSC=0
     "rjmp wait          \n"
     "lds %A0, %2        \n"  // Read ADCL
     "lds %B0, %3        \n"  // Read ADCH

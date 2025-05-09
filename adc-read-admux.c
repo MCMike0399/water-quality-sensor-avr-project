@@ -54,8 +54,8 @@ float turbidez_cal_slope = -1.408;  // (0-1000)/(710-0) = -1.408
 float turbidez_cal_offset = 1000.0; // ADC=0 → NTU=1000
 
 // pH: ADC 0-770 → pH 0-14
-float ph_cal_slope = 0.018;        // (14-0)/(770-0) = 0.018
-float ph_cal_offset = 0.0;         // ADC=0 → pH=0
+float ph_cal_slope = 0.022;        // (14-0)/(700-70) = 0.018
+float ph_cal_offset = 70.0;         // ADC=0 → pH=0
 
 // Conductividad: ADC 0-500 → 0-1500 µS/cm
 float conductividad_cal_slope = 3.0;     // (1500-0)/(500-0) = 3.0
@@ -66,9 +66,10 @@ void loop() {
   uint16_t turbidez_raw = read_adc(TURBIDITY_ADC);
   uint16_t ph_raw = read_adc(PH_ADC);
   uint16_t conductividad_raw = read_adc(CONDUCT_ADC);
+  float turbidez_voltaje = (turbidez_raw * 5.0) / 1023.0; // Convertir a voltaje
 
   // Aplicar calibración para convertir a unidades correctas
-  float turbidez_ntu = turbidez_raw * turbidez_cal_slope + turbidez_cal_offset;
+  float turbidez_ntu = turbidez_voltaje - 1120.4 * turbidez_voltaje * turbidez_voltaje + 5742.3 * turbidez_voltaje - 4352.9; // Fórmula de calibración
   float ph_value = ph_raw * ph_cal_slope + ph_cal_offset;
   float conductividad_us = conductividad_raw * conductividad_cal_slope + conductividad_cal_offset;
 
