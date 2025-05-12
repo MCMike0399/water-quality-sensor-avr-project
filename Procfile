@@ -1,1 +1,1 @@
-web: python water_monitor_iot_server.py
+web: uvicorn water_monitor_iot_server:app --host 0.0.0.0 --port $PORT

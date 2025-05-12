@@ -27,7 +27,7 @@ websocket_connections = []
 latest_data = {}
 
 # Para compatibilidad con Render, usar variables de entorno
-PORT = int(os.environ.get("PORT", 8080))
+PORT = int(os.environ.get("PORT", 8081))
 HOST = os.environ.get("HOST", "0.0.0.0")
 
 @app.get("/")
@@ -95,7 +95,8 @@ async def broadcast_data(data):
             if connection in websocket_connections:
                 websocket_connections.remove(connection)
 
-# Este bloque es crucial para Render
+# Este bloque es crucial para ejecuciones locales
+# En Render, se ejecutará directamente con uvicorn desde Procfile
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("water_monitor_iot_server:app", host=HOST, port=PORT, reload=False)
+    uvicorn.run(app, host=HOST, port=PORT)
