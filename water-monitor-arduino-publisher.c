@@ -3,10 +3,10 @@
 #include "Arduino_LED_Matrix.h"
 
 // Configuración WiFi
-const char* ssid = "TU_SSID_WIFI";
-const char* password = "TU_PASSWORD_WIFI";
-const char* serverIP = "192.168.1.X"; // IP del servidor Python
-const int serverPort = 8081;
+const char* ssid = "LeninNo1Fan";
+const char* password = "MikeTutos";
+const char* serverIP = "water-monitor-ts.onrender.com"; 
+const int serverPort = 80; // Standard HTTP port for Render (or 443 if using HTTPS)
 const char* websocketPath = "/ws";
 
 // Definición del pin para el sensor de conductividad
@@ -50,6 +50,17 @@ void setup() {
 
 void loop() {
   unsigned long currentMillis = millis();
+  
+  // Cada minuto, muestra el estado de la conexión
+  static unsigned long lastStatusCheck = 0;
+  if (currentMillis - lastStatusCheck >= 60000) { // Cada minuto
+    Serial.print("Estado WebSocket: ");
+    Serial.println(wsConnected ? "CONECTADO" : "DESCONECTADO");
+    Serial.print("WiFi RSSI: ");
+    Serial.print(WiFi.RSSI());
+    Serial.println(" dBm");
+    lastStatusCheck = currentMillis;
+  }
   
   // Reconectar WiFi si es necesario
   if (WiFi.status() != WL_CONNECTED) {
@@ -109,18 +120,25 @@ void connectToWiFi() {
 }
 
 void connectWebSocket() {
-  if (client.connect(serverIP, serverPort)) {
-    Serial.println("Conectado al servidor!");
-    
-    // Realizar handshake WebSocket
-    client.println("GET " + String(websocketPath) + " HTTP/1.1");
-    client.println("Host: " + String(serverIP) + ":" + String(serverPort));
-    client.println("Upgrade: websocket");
-    client.println("Connection: Upgrade");
-    client.println("Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==");
-    client.println("Sec-WebSocket-Version: 13");
-    client.println("X-Device-Type: arduino-publisher"); // Identificar como publisher
-    client.println();
+   Serial.println("Conectando a servidor en la nube...");
+   Serial.print("Servidor: "); 
+   Serial.print(serverIP); 
+   Serial.print(":"); 
+   Serial.println(serverPort);
+  
+  
+   if (client.connect(serverIP, serverPort)) {
+     Serial.println("TCP conectado! Iniciando handshake WebSocket...");
+     
+     // Realizar handshake WebSocket
+     client.println("GET " + String(websocketPath) + " HTTP/1.1");
+     client.println("Host: " + String(serverIP));
+     client.println("Upgrade: websocket");
+     client.println("Connection: Upgrade");
+     client.println("Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==");
+     client.println("Sec-WebSocket-Version: 13");
+     client.println("X-Device-Type: arduino-publisher");
+     client.println();
     
     // Esperar respuesta con timeout
     unsigned long timeout = millis() + 5000;
@@ -130,7 +148,14 @@ void connectWebSocket() {
     
     if (client.available()) {
       String response = client.readStringUntil('\n');
-      Serial.println("Respuesta: " + response);
+       Serial.println("Respuesta: " + response);
+       
+       // Parsear código HTTP de respuesta
+       if (response.indexOf("HTTP/1.1 101") >= 0) {
+         Serial.println("¡Handshake WebSocket exitoso!");
+       } else {
+         Serial.println("¡Error en handshake! Código incorrecto.");
+       }
       
       // Limpiar buffer
       while (client.available()) {
@@ -181,29 +206,68 @@ void sendSensorData(float conductivity) {
   String jsonString;
   serializeJson(doc, jsonString);
   
+  Serial.println("--------- ENVIANDO DATOS ---------");
+  Serial.print("Payload: ");
+  Serial.println(jsonString);
+  Serial.print("Longitud: ");
+  Serial.print(jsonString.length());
+  Serial.println(" bytes");
+  
   // Enviar frame WebSocket
+  Serial.println("Enviando frame WebSocket (opcode 0x81 - texto)");
   client.write(0x81); // Texto, fin=1
   
   // Longitud
   if (jsonString.length() < 126) {
+    Serial.print("Enviando longitud: ");
+    Serial.println(jsonString.length());
     client.write(jsonString.length());
   } else {
+    Serial.println("Enviando longitud extendida (126)");
     client.write(126);
     client.write((jsonString.length() >> 8) & 0xFF);
     client.write(jsonString.length() & 0xFF);
   }
   
   // Datos sin máscara (los servidores no necesitan enmascarar)
+  Serial.println("Enviando payload sin máscara");
   client.print(jsonString);
   
-  Serial.print("Datos enviados: ");
-  Serial.println(jsonString);
+  Serial.println("Frame WebSocket enviado correctamente");
+  Serial.println("---------------------------------");
 }
 
 void processWebSocketData() {
-  // Implementación básica - solo consume datos
-  while (client.available()) {
-    client.read();
+  Serial.println("Recibiendo datos del servidor...");
+  
+  // Buffer para leer los datos
+  byte buffer[128];
+  int bytesRead = 0;
+  
+  // Leer el primer byte (encabezado)
+  if (client.available()) {
+    byte header = client.read();
+    Serial.print("WebSocket Header: 0x");
+    Serial.println(header, HEX);
+    
+    // Verificar si es un ping (0x89)
+    if ((header & 0x0F) == 0x09) {
+      Serial.println("Recibido PING - respondiendo con PONG");
+      client.write((uint8_t)0x8A); // PONG - con conversión explícita
+      client.write((uint8_t)0x00); // Longitud cero - con conversión explícita
+      return;
+    }
+    
+    // Leer el resto de datos disponibles (simplificado)
+    while (client.available() && bytesRead < sizeof(buffer)-1) {
+      buffer[bytesRead++] = client.read();
+    }
+  }
+  
+  if (bytesRead > 0) {
+    Serial.print("Recibidos ");
+    Serial.print(bytesRead);
+    Serial.println(" bytes de respuesta");
   }
 }
 
