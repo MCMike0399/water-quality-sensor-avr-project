@@ -1,0 +1,1 @@
+web: python water_monitor_iot_server.py

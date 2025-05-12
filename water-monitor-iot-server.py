@@ -1,11 +1,9 @@
 import json
 import os
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-import threading
 import asyncio
 
 # Configuración FastAPI
@@ -17,7 +15,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Montar archivos estáticos si el directorio existe
+if os.path.exists("static"):
+    app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Lista para almacenar conexiones WebSocket
 websocket_connections = []
@@ -25,9 +26,21 @@ websocket_connections = []
 # Variable para almacenar los últimos datos
 latest_data = {}
 
+# Para compatibilidad con Render, usar variables de entorno
+PORT = int(os.environ.get("PORT", 8080))
+HOST = os.environ.get("HOST", "0.0.0.0")
+
 @app.get("/")
 async def get():
-    return FileResponse("static/ws-client.html")
+    # Verificar si el archivo existe antes de intentar servirlo
+    if os.path.exists("static/ws-client.html"):
+        return FileResponse("static/ws-client.html")
+    return {"message": "Monitor de Calidad de Agua API"}
+
+@app.get("/health")
+async def health_check():
+    """Endpoint para verificar que el servicio está funcionando"""
+    return {"status": "healthy"}
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -82,6 +95,7 @@ async def broadcast_data(data):
             if connection in websocket_connections:
                 websocket_connections.remove(connection)
 
+# Este bloque es crucial para Render
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8081)
+    uvicorn.run("water_monitor_iot_server:app", host=HOST, port=PORT, reload=False)
