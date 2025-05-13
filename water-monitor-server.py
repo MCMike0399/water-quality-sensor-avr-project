@@ -2,6 +2,7 @@ import serial
 import time
 import json
 import os
+import random
 from fastapi import FastAPI, WebSocket
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -12,8 +13,8 @@ import threading
 import asyncio
 
 # Configuración Serial
-PORT = '/dev/cu.usbmodem101'  # Ajusta al puerto correcto
-BAUD_RATE = 9600
+PORT = os.environ.get('SERIAL_PORT', '/dev/cu.usbmodem101')
+BAUD_RATE = int(os.environ.get('BAUD_RATE', '9600'))
 
 # Configuración FastAPI
 app = FastAPI()
@@ -79,6 +80,22 @@ async def broadcast_data(data):
 
 def serial_reader(main_loop):  
     try:
+        # Entramos a modo simulado si no existe un puerto serial
+        if not PORT:
+            print("No serial port specified. Using simulation mode.")
+            while True:
+                simulated_data = {
+                    "T": round(20 + 5 * random.random(), 2),
+                    "PH": round(6.5 + 1.5 * random.random(), 2),
+                    "C": round(300 + 200 * random.random(), 2)
+                }
+                asyncio.run_coroutine_threadsafe(
+                    broadcast_data(simulated_data), 
+                    main_loop
+                )
+                print(f"Simulated data: {simulated_data}")
+                time.sleep(3)
+
         ser = serial.Serial(PORT, BAUD_RATE, timeout=1)
         print(f"Conectado a {PORT} a {BAUD_RATE} baudios")
         
@@ -119,5 +136,5 @@ async def startup_event():
     ).start()
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8081)
+    port = int(os.environ.get('PORT', '8081'))
+    uvicorn.run(app, host="0.0.0.0", port=port)
