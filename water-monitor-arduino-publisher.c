@@ -5,14 +5,12 @@
 // Configuración WiFi
 const char* ssid = "LeninNo1Fan";
 const char* password = "MikeTutos";
-const char* serverIP = "water-monitor-ts.onrender.com"; 
-const int serverPort = 80; // Standard HTTP port for Render (or 443 if using HTTPS)
-const char* websocketPath = "/ws";
+const char* serverHost = "water-monitor-ts.onrender.com"; 
+const int serverPort = 80; // Puerto HTTP estándar
+const char* websocketPath = "/"; // Ruta WebSocket
 
-// Definición del pin para el sensor de conductividad
+// Configuración del sensor
 #define CONDUCT_PIN A1
-
-// Parámetros de calibración
 float conductividad_cal_slope = 3.0;
 float conductividad_cal_offset = 0.0;
 
@@ -23,72 +21,47 @@ byte frame[8][12] = {0};
 // Control de tiempo
 unsigned long lastSensorUpdate = 0;
 const long sensorInterval = 3000; // 3 segundos entre lecturas
-unsigned long lastWsReconnect = 0;
-const long reconnectInterval = 10000; // 10 segundos entre intentos de reconexión
+unsigned long lastReconnect = 0;
+const long reconnectInterval = 10000; // 10 segundos entre reconexiones
 
 // Estado de la conexión
 WiFiClient client;
 bool wsConnected = false;
+bool wsRegistered = false;
 
 void setup() {
-  // Inicializar matriz LED
   matrix.begin();
-  
-  // Inicializar comunicación serial
   Serial.begin(9600);
-  while (!Serial && millis() < 3000);
-  
-  // Configurar pin del sensor
   pinMode(CONDUCT_PIN, INPUT);
   
-  // Conectar a WiFi
   connectToWiFi();
-  
-  // Conectar al WebSocket
   connectWebSocket();
 }
 
 void loop() {
   unsigned long currentMillis = millis();
   
-  // Cada minuto, muestra el estado de la conexión
-  static unsigned long lastStatusCheck = 0;
-  if (currentMillis - lastStatusCheck >= 60000) { // Cada minuto
-    Serial.print("Estado WebSocket: ");
-    Serial.println(wsConnected ? "CONECTADO" : "DESCONECTADO");
-    Serial.print("WiFi RSSI: ");
-    Serial.print(WiFi.RSSI());
-    Serial.println(" dBm");
-    lastStatusCheck = currentMillis;
-  }
-  
   // Reconectar WiFi si es necesario
   if (WiFi.status() != WL_CONNECTED) {
-    showMatrixMessage("W"); // Mensaje "W" para WiFi
+    showMatrixMessage("W");
     connectToWiFi();
   }
   
-  // Intentar reconectar WebSocket periodicamente
-  if (!wsConnected && currentMillis - lastWsReconnect > reconnectInterval) {
-    showMatrixMessage("S"); // Mensaje "S" para Socket
+  // Reconectar WebSocket si es necesario
+  if (!wsConnected && currentMillis - lastReconnect > reconnectInterval) {
+    showMatrixMessage("S");
     connectWebSocket();
   }
 
-  // Leer sensor y enviar datos cada intervalo
-  if (wsConnected && currentMillis - lastSensorUpdate >= sensorInterval) {
-    // Leer sensor de conductividad
+  // Leer y enviar datos del sensor
+  if (wsConnected && wsRegistered && currentMillis - lastSensorUpdate >= sensorInterval) {
     float conductivity = readConductivity();
-    
-    // Mostrar valor en la matriz LED
     showValueOnMatrix(conductivity);
-    
-    // Enviar datos al servidor
     sendSensorData(conductivity);
-    
     lastSensorUpdate = currentMillis;
   }
   
-  // Procesar respuestas del servidor si hay
+  // Procesar respuestas del servidor
   if (wsConnected && client.available()) {
     processWebSocketData();
   }
@@ -100,7 +73,6 @@ void connectToWiFi() {
   
   WiFi.begin(ssid, password);
   
-  // Esperar conexión (con timeout)
   int attempts = 0;
   while (WiFi.status() != WL_CONNECTED && attempts < 20) {
     delay(500);
@@ -112,33 +84,27 @@ void connectToWiFi() {
     Serial.println("\nConectado a WiFi!");
     Serial.print("IP: ");
     Serial.println(WiFi.localIP());
-    showMatrixMessage("C"); // Mensaje "C" para Conectado
+    showMatrixMessage("C");
   } else {
     Serial.println("\nFalló la conexión WiFi");
-    showMatrixMessage("F"); // Mensaje "F" para Fallo
+    showMatrixMessage("F");
   }
 }
 
 void connectWebSocket() {
-   Serial.println("Conectando a servidor en la nube...");
-   Serial.print("Servidor: "); 
-   Serial.print(serverIP); 
-   Serial.print(":"); 
-   Serial.println(serverPort);
+  Serial.println("Conectando a WebSocket server...");
   
-  
-   if (client.connect(serverIP, serverPort)) {
-     Serial.println("TCP conectado! Iniciando handshake WebSocket...");
-     
-     // Realizar handshake WebSocket
-     client.println("GET " + String(websocketPath) + " HTTP/1.1");
-     client.println("Host: " + String(serverIP));
-     client.println("Upgrade: websocket");
-     client.println("Connection: Upgrade");
-     client.println("Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==");
-     client.println("Sec-WebSocket-Version: 13");
-     client.println("X-Device-Type: arduino-publisher");
-     client.println();
+  if (client.connect(serverHost, serverPort)) {
+    Serial.println("TCP conectado! Iniciando handshake WebSocket...");
+    
+    // Handshake WebSocket
+    client.println("GET " + String(websocketPath) + " HTTP/1.1");
+    client.println("Host: " + String(serverHost));
+    client.println("Upgrade: websocket");
+    client.println("Connection: Upgrade");
+    client.println("Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==");
+    client.println("Sec-WebSocket-Version: 13");
+    client.println();
     
     // Esperar respuesta con timeout
     unsigned long timeout = millis() + 5000;
@@ -148,22 +114,24 @@ void connectWebSocket() {
     
     if (client.available()) {
       String response = client.readStringUntil('\n');
-       Serial.println("Respuesta: " + response);
-       
-       // Parsear código HTTP de respuesta
-       if (response.indexOf("HTTP/1.1 101") >= 0) {
-         Serial.println("¡Handshake WebSocket exitoso!");
-       } else {
-         Serial.println("¡Error en handshake! Código incorrecto.");
-       }
+      Serial.println("Respuesta: " + response);
       
-      // Limpiar buffer
-      while (client.available()) {
-        client.read();
+      if (response.indexOf("HTTP/1.1 101") >= 0) {
+        Serial.println("¡Handshake WebSocket exitoso!");
+        
+        // Limpiar buffer
+        while (client.available()) {
+          client.read();
+        }
+        
+        wsConnected = true;
+        registerAsPublisher();
+        showMatrixMessage("OK");
+      } else {
+        Serial.println("Error en handshake WebSocket");
+        client.stop();
+        wsConnected = false;
       }
-      
-      wsConnected = true;
-      showMatrixMessage("OK");
     } else {
       Serial.println("No hubo respuesta del servidor");
       client.stop();
@@ -174,19 +142,27 @@ void connectWebSocket() {
     wsConnected = false;
   }
   
-  lastWsReconnect = millis();
+  lastReconnect = millis();
+}
+
+void registerAsPublisher() {
+  Serial.println("Registrando como publisher...");
+  
+  // Crear mensaje JSON para registro
+  StaticJsonDocument<128> doc;
+  doc["type"] = "register";
+  doc["role"] = "publisher";
+  
+  String jsonString;
+  serializeJson(doc, jsonString);
+  
+  // Enviar mensaje WebSocket
+  sendWebSocketMessage(jsonString);
 }
 
 float readConductivity() {
   int raw = analogRead(CONDUCT_PIN);
-  
-  // Convertir a voltaje (0-5V)
-  float voltage = raw * (5.0 / 1023.0);
-  
-  // Aplicar calibración
   float conductivity = raw * conductividad_cal_slope + conductividad_cal_offset;
-  
-  // Limitar a rango válido
   conductivity = constrain(conductivity, 0, 1500);
   
   Serial.print("Conductividad: ");
@@ -197,77 +173,85 @@ float readConductivity() {
 }
 
 void sendSensorData(float conductivity) {
-  // Crear JSON
+  // Crear JSON para datos del sensor
   StaticJsonDocument<128> doc;
-  doc["type"] = "data";
   doc["C"] = conductivity;
   
-  // Serializar
   String jsonString;
   serializeJson(doc, jsonString);
   
-  Serial.println("--------- ENVIANDO DATOS ---------");
-  Serial.print("Payload: ");
-  Serial.println(jsonString);
-  Serial.print("Longitud: ");
-  Serial.print(jsonString.length());
-  Serial.println(" bytes");
-  
+  // Enviar mensaje WebSocket
+  sendWebSocketMessage(jsonString);
+}
+
+void sendWebSocketMessage(String message) {
   // Enviar frame WebSocket
-  Serial.println("Enviando frame WebSocket (opcode 0x81 - texto)");
-  client.write(0x81); // Texto, fin=1
+  client.write((uint8_t)0x81); // Texto, fin=1
   
   // Longitud
-  if (jsonString.length() < 126) {
-    Serial.print("Enviando longitud: ");
-    Serial.println(jsonString.length());
-    client.write(jsonString.length());
-  } else {
-    Serial.println("Enviando longitud extendida (126)");
-    client.write(126);
-    client.write((jsonString.length() >> 8) & 0xFF);
-    client.write(jsonString.length() & 0xFF);
-  }
+  if (message.length() < 126) {
+  client.write((uint8_t)message.length());
+} else {
+  client.write((uint8_t)126);
+  client.write((uint8_t)((message.length() >> 8) & 0xFF));
+  client.write((uint8_t)(message.length() & 0xFF));
+}
   
-  // Datos sin máscara (los servidores no necesitan enmascarar)
-  Serial.println("Enviando payload sin máscara");
-  client.print(jsonString);
+  // Mensaje
+  client.print(message);
   
-  Serial.println("Frame WebSocket enviado correctamente");
-  Serial.println("---------------------------------");
+  Serial.println("Mensaje enviado: " + message);
 }
 
 void processWebSocketData() {
-  Serial.println("Recibiendo datos del servidor...");
+  // Leer encabezado WebSocket
+  byte header = client.read();
   
-  // Buffer para leer los datos
-  byte buffer[128];
-  int bytesRead = 0;
+  // Verificar si es un ping (0x89)
+  if ((header & 0x0F) == 0x09) {
+    Serial.println("Recibido PING - respondiendo con PONG");
+    client.write((uint8_t)0x8A); // PONG
+    client.write((uint8_t)0x00); // Longitud cero
+    return;
+  }
   
-  // Leer el primer byte (encabezado)
-  if (client.available()) {
-    byte header = client.read();
-    Serial.print("WebSocket Header: 0x");
-    Serial.println(header, HEX);
-    
-    // Verificar si es un ping (0x89)
-    if ((header & 0x0F) == 0x09) {
-      Serial.println("Recibido PING - respondiendo con PONG");
-      client.write((uint8_t)0x8A); // PONG - con conversión explícita
-      client.write((uint8_t)0x00); // Longitud cero - con conversión explícita
-      return;
-    }
-    
-    // Leer el resto de datos disponibles (simplificado)
-    while (client.available() && bytesRead < sizeof(buffer)-1) {
-      buffer[bytesRead++] = client.read();
+  // Leer longitud
+  byte lengthByte = client.read();
+  int length = lengthByte & 0x7F;
+  
+  // Leer el mensaje
+  String message = "";
+  for (int i = 0; i < length; i++) {
+    if (client.available()) {
+      message += (char)client.read();
     }
   }
   
-  if (bytesRead > 0) {
-    Serial.print("Recibidos ");
-    Serial.print(bytesRead);
-    Serial.println(" bytes de respuesta");
+  Serial.println("Mensaje recibido: " + message);
+  
+  // Procesar el mensaje
+  if (message == "ping") {
+    sendWebSocketMessage("pong");
+  } else if (message == "connected") {
+    Serial.println("Conexión WebSocket confirmada");
+  } else {
+    // Intentar parsear como JSON
+    StaticJsonDocument<256> doc;
+    DeserializationError error = deserializeJson(doc, message);
+    
+    if (!error) {
+      // Manejar respuesta de registro
+      if (doc["type"] == "registered" && doc["role"] == "publisher") {
+        wsRegistered = true;
+        Serial.println("Registro como publisher confirmado");
+      }
+      // Manejar desconexión
+      else if (doc["type"] == "disconnect") {
+        Serial.println("Servidor solicitó desconexión");
+        wsConnected = false;
+        wsRegistered = false;
+      }
+    }
   }
 }
 
