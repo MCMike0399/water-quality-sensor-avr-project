@@ -6,7 +6,7 @@
 const char* ssid = "TU_SSID_WIFI";
 const char* password = "TU_PASSWORD_WIFI";
 const char* websocketHost = "192.168.1.X"; // Dirección IP del servidor Python
-const int websocketPort = 8081;
+const int websocketPort = 0;
 const char* websocketPath = "/ws";
 
 // Configuración del sensor de conductividad

@@ -8,10 +8,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Environment variables
-ENV PORT=8081
+ENV PORT=8080
 ENV SERIAL_PORT=""
 ENV BAUD_RATE=9600
 
-EXPOSE 8081
+EXPOSE 8080
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8081"]
+CMD ["uvicorn", "water_monitor_server:app", "--host", "0.0.0.0", "--port", "80"]

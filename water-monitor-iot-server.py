@@ -28,7 +28,7 @@ publisher = None  # Arduino (solo uno)
 latest_data = {}
 
 # Para compatibilidad con Render, usar variables de entorno
-PORT = int(os.environ.get("PORT", 8081))
+PORT = int(os.environ.get("PORT", 8080))
 HOST = os.environ.get("HOST", "0.0.0.0")
 
 @app.get("/")

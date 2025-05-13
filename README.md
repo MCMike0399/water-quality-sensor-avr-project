@@ -55,7 +55,7 @@ python water_monitor_server.py
 
 2. Accede a la interfaz web:
 ```
-http://localhost:8081
+http://localhost:0
 ```
 
 ## Sistema de Alertas
